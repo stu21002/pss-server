@@ -1,81 +1,79 @@
-const express = require('express')
+const express = require('express');
 const bodyParser = require('body-parser');
-
 const multer = require('multer');
-
-//Metadata stuff
 const sharp = require('sharp');
 const exifReader = require('exif-reader');
-
-const fs = require("fs");
+const async_fs = require('fs').promises;
 const path = require('path');
 
-const app = express()
-const port = 3000
 
-app.use(bodyParser.json())
+//App consts
+const app = express();
+const port = 3000;
+const uploadDir = 'uploads';
 
-//multer RAM
-const storage = multer.memoryStorage(); 
-const upload = multer({ storage: storage });
+app.use(bodyParser.json());
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 app.get('/', (req, res) => {
-  res.send('Hello World!')
-})
-
+  res.send('Hello World!');
+});
 
 app.post('/upload', upload.single('image'), async (req, res) => {
-  
-    if (req.file && req.file.buffer) {
-        
-        //getting file data
-        const {buffer,originalname} = req.file;
-        const metadata = await sharp(buffer).metadata();   
-        const fileFormat = metadata.format;     
-        const exifData = exifReader(metadata.exif);
-
-        console.log(metadata)
-        console.log(exifData)
-
-        const dateTaken = exifData ? exifData.Photo.DateTimeOriginal || exifData.Photo.DateTimeDigitized : null;
-        const timestamp = dateTaken ? formatTimestamp(dateTaken) : Date.now();
-        
-        let filePath = path.join(__dirname, 'uploads', `${timestamp}.${fileFormat}`);
-        let dup = 1;
-        while (fs.existsSync(filePath)){
-            filePath = path.join(__dirname, 'uploads', `${timestamp}_${dup++}.${fileFormat}`);
-            
-        }
-
-        // Save the file
-        fs.writeFile(filePath, buffer, (err) => {
-        if (err) {
-            console.error('Error saving file:', err);
-            res.status(500).json({ message: 'Error saving file' });
-        } else {
-            console.log('File saved:', originalname);
-            res.json({ message: 'Upload successful' });
-        }
-        });
-    } else {
-        // Handle the case where no file was uploaded
-        res.status(400).json({ message: 'No file uploaded' });
+  try {
+    // Check if file and buffer are present in the request
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ message: 'No file uploaded' });
     }
-  });
 
+    const { buffer, originalname } = req.file;
+    const metadata = await sharp(buffer).metadata();
+    const fileFormat = metadata.format;
+    const exifData = exifReader(metadata.exif);
 
+    // Extracting date information from EXIF data or current date
+    const dateTaken = exifData && (exifData.Photo.DateTimeOriginal || exifData.Photo.DateTimeDigitized);
+    const timestamp = extractTimeStamp(dateTaken || Date.now());
+    const { year, month, day, hours, minutes, seconds } = timestamp;
+    const folderPath = path.join(uploadDir, year, month);
+
+    // Create the folder if it doesn't exist
+    await async_fs.mkdir(folderPath, { recursive: true });
+
+    let filename = `${year}${month}${day}_${hours}${minutes}${seconds}.${fileFormat}`;
+    let filePath = path.join(folderPath, `${filename}`);
+
+    // Handling potential duplicate filenames
+    let dup = 1;
+    while (await async_fs.access(filePath).then(() => true).catch(() => false)) {
+        filename = `${filename}_${dup++}.${fileFormat}`;
+        filePath = path.join(folderPath,filename);
+    }
+
+    // Save the file
+    await async_fs.writeFile(filePath, buffer);
+    console.log('File saved:', filePath);
+    res.status(200).json({ message: 'Upload successful' });
+  } catch (error) {
+    // Log the error and send an error response
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Error processing the file' });
+  }
+});
 
 app.listen(port, () => {
-  console.log(`Server listennning on port ${port}`)
-})
+  console.log(`Server listening on port ${port}`);
+});
 
-function formatTimestamp(dateString) {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const seconds = date.getSeconds().toString().padStart(2, '0');
-    return `${year}${month}${day}_${hours}${minutes}${seconds}`;
-  }
+function extractTimeStamp(dateString) {
+  const date = new Date(dateString);
+  const year = date.getFullYear().toString();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const seconds = date.getSeconds().toString().padStart(2, '0');
+  return { year, month, day, hours, minutes, seconds };
+}
