@@ -4,6 +4,7 @@ const multer = require('multer');
 const sharp = require('sharp');
 const exifReader = require('exif-reader');
 const async_fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 
 
@@ -12,6 +13,11 @@ const app = express();
 const port = 3000;
 const uploadDir = 'uploads';
 
+//tempDB
+const db = traverseDirectory(uploadDir);
+ 
+
+
 app.use(bodyParser.json());
 
 const storage = multer.memoryStorage();
@@ -19,6 +25,34 @@ const upload = multer({ storage });
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
+});
+
+app.get('/view', (req,res)=>{
+
+})
+
+app.get('/view/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    console.log(db)
+    const filePath = path.join(uploadDir, db[filename], filename);
+
+    const fileExists = await async_fs.access(filePath).then(() => true).catch(() => false);
+
+    if (fileExists) {
+      const fileBuffer = await async_fs.readFile(filePath);
+      res.writeHead(200, {
+        'Content-Type': 'image/*',
+        'Content-Length': fileBuffer.length,
+      });
+      res.end(fileBuffer);
+    } else {
+      res.status(404).json({ message: 'Image not found' });
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Error serving the image' });
+  }
 });
 
 app.post('/upload', upload.single('image'), async (req, res) => {
@@ -76,4 +110,32 @@ function extractTimeStamp(dateString) {
   const minutes = date.getMinutes().toString().padStart(2, '0');
   const seconds = date.getSeconds().toString().padStart(2, '0');
   return { year, month, day, hours, minutes, seconds };
+}
+
+
+
+////// Temporay DB code
+function traverseDirectory(baseDir, result = {}) {
+    const entries =  fs.readdirSync(baseDir);
+  
+    for (const entry of entries) {
+      const entryPath = path.join(baseDir, entry);
+      const stat =  fs.statSync(entryPath);
+     
+
+      if (stat.isDirectory()) {
+        // Recursively traverse subdirectories with a new result object
+        const subdirResult =  traverseDirectory(entryPath, result);
+      } else if (stat.isFile()) {
+
+
+        // If it's a file, store its information in the result object
+        const dir = path.relative(__dirname, entryPath).replace(/\\/g, '/'); // Adjust this if needed
+        result[entry] = path.dirname(dir);
+       
+      }
+
+    }
+     
+    return result;
 }
