@@ -27,15 +27,19 @@ app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-app.get('/view', (req,res)=>{
-
+app.get('/files', (req,res)=>{
+    const page = parseInt(req.query.p) || 1;
+    const pageSize = parseInt(req.query.s) || 10;
+    const startIndex = (page-1)*pageSize;
+    const endIndex = page*pageSize;
+    const paginatedImages = db.slice(startIndex,endIndex)
+    res.json(paginatedImages)
 })
 
-app.get('/view/:filename', async (req, res) => {
+app.get('/files/:year/:month/:filename', async (req, res) => {
   try {
-    const filename = req.params.filename;
-    console.log(db)
-    const filePath = path.join(uploadDir, db[filename], filename);
+    const {year,month,filename} = req.params;
+    const filePath = path.join(uploadDir,year,month,filename);
 
     const fileExists = await async_fs.access(filePath).then(() => true).catch(() => false);
 
@@ -76,19 +80,20 @@ app.post('/upload', upload.single('image'), async (req, res) => {
     // Create the folder if it doesn't exist
     await async_fs.mkdir(folderPath, { recursive: true });
 
-    let filename = `${year}${month}${day}_${hours}${minutes}${seconds}.${fileFormat}`;
-    let filePath = path.join(folderPath, `${filename}`);
+    const startingFileName = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+    let filePath = path.join(folderPath, `${startingFileName}.${fileFormat}`);
 
     // Handling potential duplicate filenames
     let dup = 1;
     while (await async_fs.access(filePath).then(() => true).catch(() => false)) {
-        filename = `${filename}_${dup++}.${fileFormat}`;
-        filePath = path.join(folderPath,filename);
+        const filename = `${startingFileName}_${dup++}`;
+        filePath = path.join(folderPath,`${filename}.${fileFormat}`);
     }
 
     // Save the file
     await async_fs.writeFile(filePath, buffer);
     console.log('File saved:', filePath);
+    
     res.status(200).json({ message: 'Upload successful' });
   } catch (error) {
     // Log the error and send an error response
@@ -115,7 +120,7 @@ function extractTimeStamp(dateString) {
 
 
 ////// Temporay DB code
-function traverseDirectory(baseDir, result = {}) {
+function traverseDirectory(baseDir, result = []) {
     const entries =  fs.readdirSync(baseDir);
   
     for (const entry of entries) {
@@ -131,11 +136,13 @@ function traverseDirectory(baseDir, result = {}) {
 
         // If it's a file, store its information in the result object
         const dir = path.relative(__dirname, entryPath).replace(/\\/g, '/'); // Adjust this if needed
-        result[entry] = path.dirname(dir);
+        const ent = {}
+        ent[entry] =  path.dirname(dir)
+        result.push(ent);
        
       }
 
     }
-     
+    
     return result;
 }
