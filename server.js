@@ -13,6 +13,16 @@ const app = express();
 const port = 3000;
 const uploadDir = 'uploads';
 
+
+const knex = require('knex')({
+    client: 'pg',
+    connection: {
+      host: 'localhost',
+      user: 'admin',
+      password: 'admin',
+      database: 'pss',
+    },
+  });
 //tempDB
 const db = traverseDirectory(uploadDir);
  
@@ -93,7 +103,7 @@ app.post('/upload', upload.single('image'), async (req, res) => {
     // Save the file
     await async_fs.writeFile(filePath, buffer);
     console.log('File saved:', filePath);
-    
+
     res.status(200).json({ message: 'Upload successful' });
   } catch (error) {
     // Log the error and send an error response
